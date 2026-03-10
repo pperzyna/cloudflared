@@ -1,6 +1,6 @@
 # cloudflared
 
-Minimal multi-arch Docker image for [cloudflared](https://github.com/cloudflare/cloudflared), built on `scratch` for the smallest possible footprint. Supports `linux/arm64` and `linux/arm/v7` (32-bit ARM).
+Minimal multi-arch Docker image for [cloudflared](https://github.com/cloudflare/cloudflared) based on Alpine Linux. Supports `linux/arm64` and `linux/arm/v7` (32-bit ARM).
 
 ## Image
 
@@ -70,13 +70,11 @@ Get your tunnel token from the [Cloudflare Zero Trust dashboard](https://one.das
 
 | Property  | Value                  |
 |-----------|------------------------|
-| Base      | `scratch`              |
+| Base      | `alpine:3.21`          |
 | Platform  | `linux/arm64`, `linux/arm/v7` |
 | Contents  | cloudflared binary + CA certificates |
 
-The image uses a multi-stage build:
-1. **`alpine`** — downloads the official cloudflared binary for the target arch and provides CA certificates
-2. **`scratch`** — final image contains only the binary and `/etc/ssl/certs/ca-certificates.crt`
+The cloudflared binary is downloaded directly into Alpine during the build. The ARM 32-bit binary is dynamically linked and requires musl libc provided by Alpine.
 
 ## CI/CD
 

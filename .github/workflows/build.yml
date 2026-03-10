@@ -41,9 +41,9 @@ jobs:
 
       - name: Check if image already exists
         id: check
+        if: github.event_name == 'schedule'
         run: |
           VERSION=${{ steps.version.outputs.version }}
-          TOKEN=$(echo "${{ secrets.GITHUB_TOKEN }}" | base64)
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             "https://ghcr.io/v2/${{ github.repository_owner }}/cloudflared/manifests/${VERSION}")
