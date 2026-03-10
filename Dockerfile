@@ -1,4 +1,7 @@
-FROM --platform=$TARGETPLATFORM alpine:3.21
+FROM alpine:3.21
+
+LABEL org.opencontainers.image.source="https://github.com/pperzyna/cloudflared" \ 
+      org.opencontainers.image.description="Minimal cloudflared image for linux/arm64 and linux/arm/v7, based on Alpine Linux"
 
 ARG CLOUDFLARED_VERSION
 ARG TARGETARCH
