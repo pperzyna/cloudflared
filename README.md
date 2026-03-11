@@ -21,50 +21,49 @@ docker run --rm ghcr.io/pperzyna/cloudflared:latest tunnel --no-autoupdate --url
 
 ## Running on MikroTik RouterOS 7
 
-MikroTik devices running RouterOS 7 with container support are a primary use case for this image. The image is a multi-arch manifest covering both `linux/arm/v7` (32-bit, most MikroTik devices) and `linux/arm64` — Docker will automatically pull the correct variant. Tested on hAP ax lite and hAP ax².
-
-### Prerequisites
-
-- RouterOS 7 with container support enabled (`container: yes` in device mode)
-- Set the registry URL:
-  ```
-  /container/config/set registry-url=https://ghcr.io
-  ```
-- Optionally set a temp dir on USB for faster image extraction:
-  ```
-  /container/config/set tmpdir=/usb1-part1/tmp/container-pull
-  ```
+MikroTik devices running RouterOS 7 with container support are a primary use case for this image. The image is a multi-arch manifest covering both `linux/arm/v7` (32-bit, most MikroTik devices) and `linux/arm64` — RouterOS will automatically pull the correct variant. Tested on hAP ax lite.
 
 ### Setup
 
-1. Create a virtual ethernet interface:
-   ```
-   /interface/veth/add name=veth-cloudflared
-   ```
+```
+/system/device-mode/update container=yes
+```
+*(device will reboot to apply)*
 
-2. Add the container:
-   ```
-   /container/add \
-     remote-image=ghcr.io/pperzyna/cloudflared:latest \
-     interface=veth-cloudflared \
-     hostname=cloudflared \
-     dns=1.1.1.1,1.0.0.1 \
-     logging=yes \
-     start-on-boot=yes \
-     cmd="tunnel --no-autoupdate run --token <YOUR_TOKEN>"
-   ```
+```
+/container/config/set registry-url=https://ghcr.io tmpdir=flash/tmp
 
-3. Start the container:
-   ```
-   /container/start number=0
-   ```
+/interface/veth/add name=veth1 address=172.17.0.2/24 gateway=172.17.0.1
 
-4. Check logs:
-   ```
-   /log/print follow
-   ```
+/ip/address/add address=172.17.0.1/24 interface=veth1
+
+/container/add \
+  remote-image=ghcr.io/pperzyna/cloudflared:latest \
+  interface=veth1 \
+  root-dir=flash/containers/cloudflared \
+  hostname=cloudflared \
+  dns=1.1.1.1,1.0.0.1 \
+  logging=yes \
+  start-on-boot=yes \
+  env="QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING=true" \
+  cmd="tunnel --no-autoupdate run --token <YOUR_TOKEN>"
+
+/container/start 0
+```
+
+Monitor pull progress and tunnel status:
+```
+/log/print follow
+```
 
 Get your tunnel token from the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/).
+
+### Notes
+
+- `root-dir=flash/containers/cloudflared` — stores the image on internal flash so it persists across reboots and does not need to be re-downloaded
+- `tmpdir=flash/tmp` — uses flash for layer extraction during image pull, avoiding tmpfs exhaustion on devices with limited RAM headroom (e.g. hAP ax lite with 256 MB RAM)
+- `QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING=true` — suppresses a UDP receive buffer warning logged by the QUIC library; the warning is harmless but cannot be resolved on RouterOS as sysctl values are not user-configurable
+- The binary is compressed with UPX at build time to minimize image size on flash; it decompresses into RAM at runtime
 
 ## Image details
 
@@ -72,13 +71,13 @@ Get your tunnel token from the [Cloudflare Zero Trust dashboard](https://one.das
 |-----------|------------------------|
 | Base      | `alpine:3.21`          |
 | Platform  | `linux/arm64`, `linux/arm/v7` |
-| Contents  | cloudflared binary + CA certificates |
+| Contents  | cloudflared binary (UPX compressed) + CA certificates |
 
-The cloudflared binary is downloaded directly into Alpine during the build. The ARM 32-bit binary is dynamically linked and requires musl libc provided by Alpine.
+The ARM 32-bit binary is dynamically linked and requires musl libc provided by Alpine. The binary is compressed with UPX at build time to reduce image size.
 
 ## CI/CD
 
-The GitHub Actions workflow (`.github/workflows/docker.yml`) automatically:
+The GitHub Actions workflow (`.github/workflows/build.yml`) automatically:
 
 - Builds and pushes on every push to `main`
 - Runs daily at 06:00 UTC to pick up new cloudflared releases
