@@ -33,16 +33,15 @@ MikroTik devices running RouterOS 7 with container support are a primary use cas
 ```
 /container/config/set registry-url=https://ghcr.io tmpdir=flash/tmp
 
-/interface/veth/add name=veth1 address=172.17.0.2/24 gateway=172.17.0.1
+/interface/veth/add name=veth1 dhcp=true
 
-/ip/address/add address=172.17.0.1/24 interface=veth1
+/interface/bridge/port/add bridge=bridge1 interface=veth1
 
 /container/add \
   remote-image=ghcr.io/pperzyna/cloudflared:latest \
   interface=veth1 \
   root-dir=flash/containers/cloudflared \
   hostname=cloudflared \
-  dns=1.1.1.1,1.0.0.1 \
   logging=yes \
   start-on-boot=yes \
   env="QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING=true" \
