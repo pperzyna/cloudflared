@@ -3,6 +3,9 @@ FROM alpine:3.21
 LABEL org.opencontainers.image.source="https://github.com/pperzyna/cloudflared" \ 
       org.opencontainers.image.description="Minimal cloudflared image for linux/arm64 and linux/arm/v7, based on Alpine Linux"
 
+ENV TUNNEL_METRICS="localhost:2000"
+HEALTHCHECK --interval=5s --retries=6 --timeout=3s CMD wget -q ${TUNNEL_METRICS}/ready -O -
+
 ARG CLOUDFLARED_VERSION
 ARG TARGETARCH
 
