@@ -163,7 +163,7 @@ jobs:
             { gh release view "$VERSION" --json body --jq .body; echo "$BUILD"; } \
               | gh release edit "$VERSION" --notes-file -
           else
-            cat <<NOTES | gh release create "$VERSION" --target "$REVISION" --title "cloudflared ${VERSION}" --latest --notes-file -
+            cat <<NOTES | gh release create "$VERSION" --target "$REVISION" --title "v${VERSION}" --latest --notes-file -
           [cloudflared ${VERSION}](https://github.com/cloudflare/cloudflared/releases/tag/${VERSION}) on Alpine, for \`linux/arm64\` and \`linux/arm/v7\`.
 
           \`\`\`
