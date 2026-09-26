@@ -1,0 +1,8 @@
+# Keeps the actions in the workflows current. cloudflared and Alpine are bumped
+# by the bump job in build.yml instead.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

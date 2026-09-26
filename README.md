@@ -66,22 +66,24 @@ Get your tunnel token from the [Cloudflare Zero Trust dashboard](https://one.das
 
 ## Image details
 
-| Property  | Value                  |
-|-----------|------------------------|
-| Base      | `alpine:3.21`          |
-| Platform  | `linux/arm64`, `linux/arm/v7` |
-| Contents  | cloudflared binary (UPX compressed) + CA certificates |
+| Property    | Value                  |
+|-------------|------------------------|
+| cloudflared | `2026.9.3`             |
+| Base        | `alpine:3.24`          |
+| Platform    | `linux/arm64`, `linux/arm/v7` |
+| Contents    | cloudflared binary (UPX compressed) + CA certificates |
 
 The ARM 32-bit binary is dynamically linked and requires musl libc provided by Alpine. The binary is compressed with UPX at build time to reduce image size.
 
 ## CI/CD
 
-The GitHub Actions workflow (`.github/workflows/build.yml`) automatically:
+The versions live in the `Dockerfile` (`ARG CLOUDFLARED_VERSION` and `FROM alpine:`). The GitHub Actions workflow (`.github/workflows/build.yml`):
 
-- Builds and pushes on every push to `main`
-- Runs daily at 06:00 UTC to pick up new cloudflared releases
-- Skips the build if the image tag already exists in GHCR
-- Can be triggered manually with an optional specific version
+- Runs daily at 06:00 UTC, checks the latest cloudflared release and the latest stable Alpine branch, and commits any change to the `Dockerfile` and the table above; the same run then builds and pushes `:<version>` and `:latest`
+- Builds on every push to `main` that touches the `Dockerfile` or the workflow
+- Can be triggered manually with a specific version to backfill an older tag (`:latest` is left alone)
+
+The daily commits also keep the repository active — GitHub disables scheduled workflows in repositories without activity for 60 days. Dependabot keeps the actions current.
 
 ## Build and test locally
 
@@ -97,38 +99,31 @@ The GitHub Actions workflow (`.github/workflows/build.yml`) automatically:
 ### Build
 
 ```sh
-# ARM64
+# ARM64, version from the Dockerfile
+docker build --platform linux/arm64 -t cloudflared .
+
+# ARM 32-bit
+docker build --platform linux/arm/v7 -t cloudflared:armv7 .
+```
+
+To build another version, pass it as a build argument:
+
+```sh
 docker build --platform linux/arm64 \
   --build-arg CLOUDFLARED_VERSION=2026.3.0 \
   -t cloudflared:2026.3.0 .
-
-# ARM 32-bit
-docker build --platform linux/arm/v7 \
-  --build-arg CLOUDFLARED_VERSION=2026.3.0 \
-  -t cloudflared:2026.3.0-armv7 .
-```
-
-To use the latest version automatically:
-
-```sh
-VERSION=$(curl -s https://api.github.com/repos/cloudflare/cloudflared/releases/latest \
-  | grep '"tag_name"' | cut -d'"' -f4)
-
-docker build --platform linux/arm64,linux/arm/v7 \
-  --build-arg CLOUDFLARED_VERSION=$VERSION \
-  -t cloudflared:$VERSION .
 ```
 
 ### Test
 
 ```sh
 # Print version (ARM64)
-docker run --rm --platform linux/arm64 cloudflared:2026.3.0 --version
+docker run --rm --platform linux/arm64 cloudflared --version
 
 # Print version (ARM 32-bit)
-docker run --rm --platform linux/arm/v7 cloudflared:2026.3.0 --version
+docker run --rm --platform linux/arm/v7 cloudflared:armv7 --version
 
 # Run a named tunnel
-docker run --rm --platform linux/arm/v7 cloudflared:2026.3.0 \
+docker run --rm --platform linux/arm/v7 cloudflared:armv7 \
   tunnel --no-autoupdate run --token <YOUR_TOKEN>
 ```
