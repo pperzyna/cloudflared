@@ -4,66 +4,120 @@ on:
   push:
     branches:
       - main
+    paths:
+      - Dockerfile
+      - .github/workflows/build.yml
   schedule:
-    # Check for new cloudflared releases daily at 06:00 UTC
+    # Check for new cloudflared and Alpine releases daily at 06:00 UTC
     - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       version:
-        description: "cloudflared version (e.g. 2026.3.0), leave empty to use latest"
+        description: "cloudflared version to build without tagging latest (e.g. 2026.3.0); leave empty for the one in the Dockerfile"
         required: false
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/cloudflared
 
 jobs:
-  build:
+  # Bumps the versions in the Dockerfile and README with a commit. The commit
+  # also keeps the repo active, so GitHub does not disable the schedule after
+  # 60 days. A push made with GITHUB_TOKEN starts no new run, hence the build
+  # job below is chained to this one.
+  bump:
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+      sha: ${{ steps.commit.outputs.sha }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Resolve latest versions
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CLOUDFLARED=$(gh api repos/cloudflare/cloudflared/releases/latest --jq .tag_name)
+          ALPINE=$(curl -fsSL https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/latest-releases.yaml \
+            | awk '/branch:/ { sub("v", "", $2); print $2; exit }')
+          test -n "$CLOUDFLARED" && test -n "$ALPINE"
+          echo "cloudflared=${CLOUDFLARED}" >> "$GITHUB_OUTPUT"
+          echo "alpine=${ALPINE}" >> "$GITHUB_OUTPUT"
+          echo "Latest: cloudflared ${CLOUDFLARED}, alpine ${ALPINE}"
+
+      - name: Update Dockerfile and README
+        env:
+          CLOUDFLARED: ${{ steps.latest.outputs.cloudflared }}
+          ALPINE: ${{ steps.latest.outputs.alpine }}
+        run: |
+          sed -i -E "s/^(ARG CLOUDFLARED_VERSION=).*/\1${CLOUDFLARED}/; s/^FROM alpine:.*/FROM alpine:${ALPINE}/" Dockerfile
+          sed -i -E "s/^(\| cloudflared +\| \`)[^\`]*/\1${CLOUDFLARED}/; s/^(\| Base +\| \`alpine:)[^\`]*/\1${ALPINE}/" README.md
+          git diff
+
+      - name: Commit
+        id: commit
+        env:
+          CLOUDFLARED: ${{ steps.latest.outputs.cloudflared }}
+          ALPINE: ${{ steps.latest.outputs.alpine }}
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -am "cloudflared ${CLOUDFLARED} on alpine ${ALPINE}"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: bump
+    # Runs on push and manual dispatch (bump skipped), and on schedule only
+    # when bump committed something.
+    if: >-
+      !cancelled() &&
+      (github.event_name != 'schedule' || needs.bump.outputs.changed == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.bump.outputs.sha || github.sha }}
+
       - name: Resolve cloudflared version
         id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+            LATEST=false
           else
-            VERSION=$(curl -s https://api.github.com/repos/cloudflare/cloudflared/releases/latest \
-              | grep '"tag_name"' | cut -d'"' -f4)
+            VERSION=$(sed -n 's/^ARG CLOUDFLARED_VERSION=//p' Dockerfile)
+            LATEST=true
           fi
+          test -n "$VERSION"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Resolved cloudflared version: ${VERSION}"
-
-      - name: Check if image already exists
-        id: check
-        if: github.event_name == 'schedule'
-        run: |
-          VERSION=${{ steps.version.outputs.version }}
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://ghcr.io/v2/${{ github.repository_owner }}/cloudflared/manifests/${VERSION}")
-          if [ "$STATUS" = "200" ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Image for ${VERSION} already exists, skipping build."
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "latest=${LATEST}" >> "$GITHUB_OUTPUT"
+          echo "Building cloudflared ${VERSION} (latest: ${LATEST})"
 
       - name: Set up QEMU
-        if: steps.check.outputs.exists != 'true'
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        if: steps.check.outputs.exists != 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        if: steps.check.outputs.exists != 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -71,7 +125,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        if: steps.check.outputs.exists != 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -81,6 +134,6 @@ jobs:
             CLOUDFLARED_VERSION=${{ steps.version.outputs.version }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
-            ${{ env.IMAGE_NAME }}:latest
+            ${{ steps.version.outputs.latest == 'true' && format('{0}:latest', env.IMAGE_NAME) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
