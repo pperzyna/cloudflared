@@ -1,0 +1,35 @@
+name: Clean up Images
+
+on:
+  schedule:
+    - cron: "0 7 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only log what would be deleted"
+        type: boolean
+        default: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      # Every rebuild of a tag leaves the previous image untagged, along with
+      # its platform manifests and attestations. The action follows multi-arch
+      # indexes, so children of tagged images are kept.
+      - name: Delete untagged images
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          delete-untagged: true
+          dry-run: ${{ inputs.dry_run == true }}
+
+      - name: Delete versions older than a year
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          delete-tags: "*"
+          exclude-tags: latest
+          older-than: 1 year
+          dry-run: ${{ inputs.dry_run == true }}

@@ -83,6 +83,8 @@ The versions live in the `Dockerfile` (`ARG CLOUDFLARED_VERSION` and `FROM alpin
 - Builds on every push to `main` that touches the `Dockerfile` or the workflow
 - Can be triggered manually with a specific version to backfill an older tag (`:latest` is left alone)
 
+A weekly workflow (`.github/workflows/cleanup.yml`) deletes untagged images and version tags older than a year; `:latest` is always kept.
+
 The daily commits also keep the repository active — GitHub disables scheduled workflows in repositories without activity for 60 days. Dependabot keeps the actions current.
 
 ## Build and test locally
