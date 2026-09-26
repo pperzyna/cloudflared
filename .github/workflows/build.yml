@@ -85,7 +85,7 @@ jobs:
       (github.event_name != 'schedule' || needs.bump.outputs.changed == 'true')
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
@@ -107,8 +107,12 @@ jobs:
             LATEST=true
           fi
           test -n "$VERSION"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "latest=${LATEST}" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=${VERSION}"
+            echo "latest=${LATEST}"
+            echo "alpine=$(sed -n 's/^FROM alpine://p' Dockerfile)"
+            echo "revision=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
           echo "Building cloudflared ${VERSION} (latest: ${LATEST})"
 
       - name: Set up QEMU
@@ -125,6 +129,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -135,5 +140,37 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
             ${{ steps.version.outputs.latest == 'true' && format('{0}:latest', env.IMAGE_NAME) || '' }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.version.outputs.revision }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # One release per cloudflared version, tagged at the commit it was built
+      # from. A rebuild of the same version (Alpine bump, workflow change) is
+      # appended to that release's list of builds. Backfills get no release.
+      - name: Release
+        if: steps.version.outputs.latest == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ALPINE: ${{ steps.version.outputs.alpine }}
+          REVISION: ${{ steps.version.outputs.revision }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          BUILD="- $(date -u +%F): alpine ${ALPINE}, \`${DIGEST}\`, ${REVISION:0:7}"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            { gh release view "$VERSION" --json body --jq .body; echo "$BUILD"; } \
+              | gh release edit "$VERSION" --notes-file -
+          else
+            cat <<NOTES | gh release create "$VERSION" --target "$REVISION" --title "cloudflared ${VERSION}" --latest --notes-file -
+          [cloudflared ${VERSION}](https://github.com/cloudflare/cloudflared/releases/tag/${VERSION}) on Alpine, for \`linux/arm64\` and \`linux/arm/v7\`.
+
+          \`\`\`
+          ${IMAGE_NAME}:${VERSION}
+          \`\`\`
+
+          Builds:
+          ${BUILD}
+          NOTES
+          fi
