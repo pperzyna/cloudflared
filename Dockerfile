@@ -6,7 +6,7 @@ LABEL org.opencontainers.image.source="https://github.com/pperzyna/cloudflared" 
 ENV TUNNEL_METRICS="localhost:2000"
 HEALTHCHECK --interval=5s --retries=6 --timeout=3s CMD wget -q ${TUNNEL_METRICS}/ready -O -
 
-ARG CLOUDFLARED_VERSION=2026.10.0
+ARG CLOUDFLARED_VERSION=2026.10.1
 ARG TARGETARCH
 
 RUN apk add --no-cache ca-certificates upx && \
