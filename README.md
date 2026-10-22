@@ -68,7 +68,7 @@ Get your tunnel token from the [Cloudflare Zero Trust dashboard](https://one.das
 
 | Property    | Value                  |
 |-------------|------------------------|
-| cloudflared | `2026.10.2`             |
+| cloudflared | `2026.10.3`             |
 | Base        | `alpine:3.24`          |
 | Platform    | `linux/arm64`, `linux/arm/v7` |
 | Contents    | cloudflared binary (UPX compressed) + CA certificates |
